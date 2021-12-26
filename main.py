@@ -43,6 +43,9 @@ valid_dataset = torch.utils.data.Subset(valid_dataset, valid_indices)
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 valid_loader = DataLoader(valid_dataset, batch_size=1, shuffle=False)
 
+# create model
+
+model_path = f'./output/{output_filename}.pth'
 model = SimTriplet()
 model = model.cuda()
 
@@ -51,34 +54,43 @@ best_valid_loss = np.inf
 
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9, weight_decay=1e-4)
 
-model_path = f'./output/{output_filename}.pth'
+def D(p, z): # negative cosine similarity
+    return - F.cosine_similarity(p, z.detach(), dim=-1).mean()
+
 for num_epoch in range(epochs):
+    print(f'epoch: {num_epoch+1}/{epochs}')
     model.train()
     train_losses = []
     for img1, img2, img3 in tqdm(train_loader):
         optimizer.zero_grad()
         img1, img2, img3 = img1.cuda(), img2.cuda(), img3.cuda()
-        loss_dict = model(img1, img2, img3)
-        loss = loss_dict['loss'].mean()
+        z1, p1 = model(img1)
+        z2, p2 = model(img2)
+        z3, p3 = model(img3)
+        loss = D(p1, z2) / 2 + D(p2, z1) / 2 + D(p1, z3) / 2 + D(p3, z1) / 2
+        loss = torch.mean(loss)
         loss.backward()
         optimizer.step()
         loss = loss.detach().cpu().numpy()
         train_losses.append(loss)
-        del img1, img2, img3
+        del img1, img2, img3, z1, z2, z3, p1, p2, p3
     train_loss = np.mean(train_losses)
-    print(f"Training loss: {train_loss}    {num_epoch+1}/{epochs}")
+    print(f"Training loss: {train_loss}")
 
     model.eval()
     valid_losses = []
     for img1, img2, img3 in tqdm(valid_loader):
         img1, img2, img3 = img1.cuda(), img2.cuda(), img3.cuda()
-        loss_dict = model(img1, img2, img3)
-        loss = loss_dict['loss'].mean()
+        z1, p1 = model(img1)
+        z2, p2 = model(img2)
+        z3, p3 = model(img3)
+        loss = D(p1, z2) / 2 + D(p2, z1) / 2 + D(p1, z3) / 2 + D(p3, z1) / 2
+        loss = torch.mean(loss)
         loss = loss.detach().cpu().numpy()
         valid_losses.append(loss)
-        del img1, img2, img3
+        del img1, img2, img3, z1, z2, z3, p1, p2, p3
     valid_loss = np.mean(valid_losses)
-    print(f"Valid loss: {valid_loss}    {num_epoch+1}/{epochs}")
+    print(f"Valid loss: {valid_loss}")
 
     if valid_loss < best_valid_loss:
         if not os.path.exists('output'):
@@ -97,10 +109,10 @@ label_loader = DataLoader(label_dataset, batch_size=1, shuffle=False)
 
 """CHECK THIS"""
 
-model = torchvision.models.resnet34()
+model = SimTriplet()
 save_dict = torch.load(model_path, map_location='cpu')
-msg = model.load_state_dict({k[9:]: v for k, v in save_dict['state_dict'].items() if k.startswith('backbone.')},strict=True)
-print(msg)
+model = model.load_state_dict(save_dict)
+print(model)
 model = model.cuda()
 
 best_thrd = 0
@@ -110,8 +122,8 @@ for i in range(50):
     for img1, img2, label in tqdm(label_loader):
         with torch.no_grad():
             img1, img2 = img1.cuda(), img2.cuda()
-            feature1 = model(img1)
-            feature2 = model(img2)
+            feature1, _ = model(img1)
+            feature2, _ = model(img2)
             cos_sim = F.cosine_similarity(feature1, feature2)
             cos_sim = cos_sim.detach().cpu().numpy()
             if(cos_sim > thrd):
@@ -140,7 +152,7 @@ output_csv = f'./output/{output_filename}.csv'
 
 model.eval()
 test_dataset = TestDataset(query_path, test_dir)
-test_dataloader = torch.utils.data.DataLoader(
+test_dataloader = DataLoader(
     test_dataset,
     batch_size=1,
     shuffle = False
