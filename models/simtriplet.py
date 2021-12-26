@@ -4,20 +4,6 @@ import torch.nn.functional as F
 from torchvision.models import resnet34
 
 
-def D(p, z, version='simplified'): # negative cosine similarity
-    if version == 'original':
-        z = z.detach() # stop gradient
-        p = F.normalize(p, dim=1) # l2-normalize 
-        z = F.normalize(z, dim=1) # l2-normalize 
-        return -(p*z).sum(dim=1).mean()
-
-    elif version == 'simplified':# same thing, much faster. Scroll down, speed test in __main__
-        return - F.cosine_similarity(p, z.detach(), dim=-1).mean()
-    else:
-        raise Exception
-
-
-
 class projection_MLP(nn.Module):
     def __init__(self, in_dim, hidden_dim=2048, out_dim=2048):
         super().__init__()
@@ -87,7 +73,7 @@ class prediction_MLP(nn.Module):
         return x 
 
 class SimTriplet(nn.Module):
-    def __init__(self, backbone=resnet34()):
+    def __init__(self, backbone=resnet34(pretrained=True)):
         super().__init__()
 
         self.backbone = backbone
@@ -99,12 +85,7 @@ class SimTriplet(nn.Module):
         )
         self.predictor = prediction_MLP()
     
-    def forward(self, x1, x2, x3):
-
-        f, h = self.encoder, self.predictor
-        z1 = f(x1)
-        z2 = f(x2)
-        z3 = f(x3)
-        p1, p2, p3 = h(z1), h(z2), h(z3)
-        L = D(p1, z2) / 2 + D(p2, z1) / 2 + D(p1, z3) / 2 + D(p3, z1) / 2
-        return {'loss': L}
+    def forward(self, x):
+        z = self.encoder(x)
+        p = self.predictor(z)
+        return z, p
