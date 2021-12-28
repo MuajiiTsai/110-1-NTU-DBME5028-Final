@@ -5,10 +5,10 @@ import torch
 import argparse
 import tools
 import random
-import torchvision.models
 import torch.nn.functional as F 
+from torchvision.models import effecientnet_b0
 from models import SimTriplet
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 from dataset import *
 from sklearn.model_selection import train_test_split
@@ -19,18 +19,20 @@ parser.add_argument('--train_dir', default='./train_npy/', type=str, help='train
 parser.add_argument('--test_dir', default='./test_npy/', type=str, help='test data directory')
 parser.add_argument('--batch_size', default=16, type=int)
 parser.add_argument('--epoch', default=1, type=int)
+parser.add_argument('--filename', default='', type=str, help='output_filename: SimTriplet_E{args.epoch}_B{args.batch_size}_filename)')
 
 args = parser.parse_args()
 train_dir, test_dir = args.train_dir,  args.test_dir
 epochs, batch_size = args.epoch, args.batch_size
+filename = args.filename
+tools.same_seeds(101)
 
-tools.same_seeds(456101)
-
-output_filename = f'SimTriplet_E{epochs}_B{batch_size}'  
+output_filename = f'SimTriplet_E{epochs}_B{batch_size}_{filename}'  
 
 #prepare data
+
 train_dataset = datasettriplet(img_dir=train_dir, transform=train_transform)
-valid_dataset = datasettriplet(img_dir=train_dir, transform=valid_transform)
+valid_dataset = datasettriplet(img_dir=train_dir, transform=train_transform)
 
 split = int(len(train_dataset)*0.2)
 indices = [i for i in range(len(train_dataset))]
@@ -39,9 +41,17 @@ train_idx, valid_idx = indices[split:], indices[:split]
 train_indices, valid_indices = train_test_split(indices)
 train_dataset = torch.utils.data.Subset(train_dataset, train_indices)
 valid_dataset = torch.utils.data.Subset(valid_dataset, valid_indices)
+"""
+all_train_dataset = datasettriplet(img_dir=train_dir, transform=train_transform)
+train_dataset_size = int(len(all_train_dataset)*0.8)
+valid_dataset_size = len(all_train_dataset)-train_dataset_size
+train_dataset, valid_dataset = random_split(all_train_dataset, [train_dataset_size, valid_dataset_size])
+print(len(train_dataset), len(valid_dataset))
+"""
 
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 valid_loader = DataLoader(valid_dataset, batch_size=1, shuffle=False)
+
 
 # create model
 
@@ -105,25 +115,26 @@ for num_epoch in range(epochs):
 """Finetune"""
 #prepare data
 label_dataset = LabelDataset(annotation_filepath='validation_ground_truth.csv',img_dir=train_dir, transform=valid_transform)
-label_loader = DataLoader(label_dataset, batch_size=1, shuffle=False)
+label_loader = DataLoader(label_dataset, batch_size=1, shuffle=False,drop_last=True)
 
 """CHECK THIS"""
 
 model = SimTriplet()
-save_dict = torch.load(model_path, map_location='cpu')
-model = model.load_state_dict(save_dict)
-print(model)
+save_dict = torch.load(model_path)
+model.load_state_dict(save_dict)
 model = model.cuda()
 
+model.eval()
 best_thrd = 0
+best_grade = 0
 for i in range(50):
     correct = 0
     thrd = random.uniform(0,1)
     for img1, img2, label in tqdm(label_loader):
-        with torch.no_grad():
+    	with torch.no_grad():
             img1, img2 = img1.cuda(), img2.cuda()
-            feature1, _ = model(img1)
-            feature2, _ = model(img2)
+            feature1, p1 = model(img1)
+            feature2, p2 = model(img2)
             cos_sim = F.cosine_similarity(feature1, feature2)
             cos_sim = cos_sim.detach().cpu().numpy()
             if(cos_sim > thrd):
@@ -145,25 +156,25 @@ print(f"threshold: {best_thres}, c-index: {best_grade}")
 
 #prediction
 
-from torchvision.io import read_image, ImageReadMode
 query_path = f'./queries.csv'
 output_csv = f'./output/{output_filename}.csv'
 
 
-model.eval()
 test_dataset = TestDataset(query_path, test_dir)
 test_dataloader = DataLoader(
     test_dataset,
     batch_size=1,
-    shuffle = False
+    shuffle = False,
+    drop_last=True
 )
 
+model.eval()
 output = pd.DataFrame(columns= ['query', 'prediction'])
 with torch.no_grad():
     for img1, img2, query in tqdm(test_dataloader):
         img1, img2 = img1.cuda(), img2.cuda()
-        feature1 = model(img1)
-        feature2 = model(img2)
+        feature1, p1= model(img1)
+        feature2, p2 = model(img2)
         cos_sim = F.cosine_similarity(feature1, feature2)
         cos_sim = cos_sim.detach().cpu().numpy()
         if(cos_sim > best_thres):
