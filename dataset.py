@@ -12,9 +12,10 @@ std = [0.229, 0.224, 0.225]
 train_transform = transforms.Compose([
     transforms.RandomResizedCrop(256),
     transforms.RandomHorizontalFlip(p=0.5),
-    transforms.RandomApply([transforms.ColorJitter(0.2, 0.4, 0.4, 0.1)], p=0.8),
+    transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
     transforms.RandomGrayscale(p=0.2),
     transforms.ToTensor(),
+    transforms.GaussianBlur(kernel_size=256//20*2+1, sigma=(0.1, 2.0)),
     transforms.Normalize([*mean], [*std])
 ])
 
@@ -57,10 +58,6 @@ class LabelDataset(Dataset):
         self.path = img_dir
         self.label = pd.read_csv(annotation_filepath)
         self.transform = transform
-        self.trans = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize([*mean], [*std])
-        ])
     def __len__(self):
         return len(self.label)
     def __getitem__(self, idx):
@@ -70,7 +67,7 @@ class LabelDataset(Dataset):
         img2 = np.load(os.path.join(self.path, img2_name))
         img1 = Image.fromarray(img1)
         img2 = Image.fromarray(img2)
-        img1, img2 = self.trans(img1), self.trans(img2)
+        img1, img2 = self.transform(img1), self.transform(img2)
         return img1, img2, label
 
 class TestDataset(Dataset):
