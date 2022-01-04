@@ -1,6 +1,6 @@
 # 110-1-NTU-DBME5028-Final
 Please execute our project by the following step:
-1. Download and execute download.sh and you'll get a zip file which contains:
+1. Download and execute download.sh and you'll get a zip file "final.zip" which contains:
 ```
 train.py
 inference.py
