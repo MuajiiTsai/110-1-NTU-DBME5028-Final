@@ -12,7 +12,7 @@ models\
 ```
 The zip file will unzip and execute png2npy.py automatically.
 
-2. Execute inference.py with the default datapath we given. i.e.,
+2. Execute inference.py with the default datapath we give. i.e.,
 ```
 python inference.py
 ```
