@@ -1,6 +1,6 @@
 #!/bin/bash
 
-wget https://www.dropbox.com/s/o95wsfao2dpmysa/test.zip
-unzip ./test.zip
+wget https://www.dropbox.com/s/aa6ntj73sax6ccb/final.zip
+unzip ./final.zip
 python png2npy.py 
 
